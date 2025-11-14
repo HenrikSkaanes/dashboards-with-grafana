@@ -21,6 +21,8 @@ jobs:
       # Required for Azure OIDC authentication
       id-token: write
       contents: read
+      # Required to post PR comments
+      pull-requests: write
 
     steps:
       - name: Checkout repository
