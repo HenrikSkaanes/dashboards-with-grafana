@@ -1,0 +1,17 @@
+{
+  "version": "1.0",
+  "dashboards": [
+    {
+      "uid": "service-health-dashboard",
+      "path": "dashboards/service-health/v1.2.json",
+      "folder": "Production",
+      "version": "v1.2"
+    },
+    {
+      "uid": "api-performance-dashboard",
+      "path": "dashboards/api-performance/v2.0.json",
+      "folder": "Production",
+      "version": "v2.0"
+    }
+  ]
+}

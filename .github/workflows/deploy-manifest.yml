@@ -1,0 +1,254 @@
+name: Deploy Grafana Dashboards from Manifest
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'dashboards/**'
+      - 'active-manifest.json'
+  pull_request:
+    paths:
+      - 'dashboards/**'
+      - 'active-manifest.json'
+
+env:
+  MANIFEST_FILE: active-manifest.json
+
+jobs:
+  validate-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      # Required for Azure OIDC authentication
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install jq for JSON validation
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Validate manifest JSON structure
+        run: |
+          echo "Validating manifest file structure..."
+          jq empty "${{ env.MANIFEST_FILE }}" || {
+            echo "ERROR: Manifest JSON is invalid"
+            exit 1
+          }
+          echo "✓ Manifest JSON is valid"
+
+      - name: Extract and validate dashboard files
+        id: validate-dashboards
+        run: |
+          echo "Extracting dashboard paths from manifest..."
+          DASHBOARD_PATHS=$(jq -r '.dashboards[].path' "${{ env.MANIFEST_FILE }}")
+          
+          echo "Validating dashboard JSON files..."
+          EXIT_CODE=0
+          for DASHBOARD_PATH in $DASHBOARD_PATHS; do
+            echo "Checking: $DASHBOARD_PATH"
+            
+            # Check file exists
+            if [ ! -f "$DASHBOARD_PATH" ]; then
+              echo "ERROR: Dashboard file not found: $DASHBOARD_PATH"
+              EXIT_CODE=1
+              continue
+            fi
+            
+            # Validate JSON structure
+            if ! jq empty "$DASHBOARD_PATH" 2>/dev/null; then
+              echo "ERROR: Invalid JSON in $DASHBOARD_PATH"
+              EXIT_CODE=1
+              continue
+            fi
+            
+            # Validate dashboard has required fields
+            if ! jq -e '.dashboard.uid' "$DASHBOARD_PATH" >/dev/null; then
+              echo "ERROR: Missing .dashboard.uid in $DASHBOARD_PATH"
+              EXIT_CODE=1
+              continue
+            fi
+            
+            echo "✓ $DASHBOARD_PATH is valid"
+          done
+          
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "Dashboard validation failed"
+            exit 1
+          fi
+          
+          echo "✓ All dashboards validated successfully"
+
+      - name: Validate manifest UIDs match dashboard UIDs
+        run: |
+          echo "Validating UID consistency between manifest and dashboard files..."
+          EXIT_CODE=0
+          
+          # Read each dashboard entry from manifest
+          jq -c '.dashboards[]' "${{ env.MANIFEST_FILE }}" | while read -r dashboard; do
+            MANIFEST_UID=$(echo "$dashboard" | jq -r '.uid')
+            DASHBOARD_PATH=$(echo "$dashboard" | jq -r '.path')
+            
+            # Extract UID from dashboard file
+            FILE_UID=$(jq -r '.dashboard.uid' "$DASHBOARD_PATH")
+            
+            if [ "$MANIFEST_UID" != "$FILE_UID" ]; then
+              echo "ERROR: UID mismatch for $DASHBOARD_PATH"
+              echo "  Manifest UID: $MANIFEST_UID"
+              echo "  File UID: $FILE_UID"
+              EXIT_CODE=1
+            else
+              echo "✓ UID match for $DASHBOARD_PATH: $MANIFEST_UID"
+            fi
+          done
+          
+          if [ $EXIT_CODE -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Azure Login via OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get Grafana Access Token
+        id: get-grafana-token
+        run: |
+          # Get Azure Managed Grafana resource details
+          GRAFANA_ENDPOINT="${{ secrets.GRAFANA_URL }}"
+          
+          # Get access token for Grafana API
+          # Azure Managed Grafana uses Azure AD tokens, not API keys
+          GRAFANA_TOKEN=$(az account get-access-token \
+            --resource https://grafana.azure.com \
+            --query accessToken -o tsv)
+          
+          echo "::add-mask::$GRAFANA_TOKEN"
+          echo "GRAFANA_TOKEN=$GRAFANA_TOKEN" >> $GITHUB_OUTPUT
+          echo "✓ Retrieved Grafana access token"
+
+      # Alternative: If using Grafana service account tokens stored in Key Vault
+      # - name: Get Grafana API Key from Azure Key Vault
+      #   id: get-grafana-key
+      #   run: |
+      #     GRAFANA_API_KEY=$(az keyvault secret show \
+      #       --vault-name ${{ secrets.AZURE_KEYVAULT_NAME }} \
+      #       --name grafana-api-key \
+      #       --query value -o tsv)
+      #     echo "::add-mask::$GRAFANA_API_KEY"
+      #     echo "GRAFANA_API_KEY=$GRAFANA_API_KEY" >> $GITHUB_OUTPUT
+
+      - name: Deploy dashboards to Grafana
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
+          GRAFANA_TOKEN: ${{ steps.get-grafana-token.outputs.GRAFANA_TOKEN }}
+          # Alternative: Use Grafana service account token from Key Vault
+          # GRAFANA_API_KEY: ${{ steps.get-grafana-key.outputs.GRAFANA_API_KEY }}
+        run: |
+          echo "Deploying dashboards to Grafana..."
+          
+          # Validate required secrets
+          if [ -z "$GRAFANA_URL" ]; then
+            echo "ERROR: GRAFANA_URL secret not set"
+            exit 1
+          fi
+          
+          if [ -z "$GRAFANA_TOKEN" ]; then
+            echo "ERROR: GRAFANA_TOKEN not retrieved from Azure"
+            exit 1
+          fi
+          
+          EXIT_CODE=0
+          
+          # Deploy each dashboard from manifest
+          jq -c '.dashboards[]' "${{ env.MANIFEST_FILE }}" | while read -r dashboard; do
+            MANIFEST_UID=$(echo "$dashboard" | jq -r '.uid')
+            DASHBOARD_PATH=$(echo "$dashboard" | jq -r '.path')
+            FOLDER_NAME=$(echo "$dashboard" | jq -r '.folder')
+            VERSION_LABEL=$(echo "$dashboard" | jq -r '.version // "unknown"')
+            
+            echo ""
+            echo "================================================"
+            echo "Deploying: $DASHBOARD_PATH"
+            echo "  UID: $MANIFEST_UID"
+            echo "  Version: $VERSION_LABEL"
+            echo "  Folder: $FOLDER_NAME"
+            echo "================================================"
+            
+            # Read dashboard JSON and ensure UID matches manifest
+            DASHBOARD_JSON=$(jq --arg uid "$MANIFEST_UID" \
+              '.dashboard.uid = $uid | .dashboard.id = null | .dashboard.version = 0' \
+              "$DASHBOARD_PATH")
+            
+            # Create deployment payload with folder
+            PAYLOAD=$(jq -n \
+              --argjson dashboard "$DASHBOARD_JSON" \
+              --arg folder "$FOLDER_NAME" \
+              '{
+                dashboard: $dashboard.dashboard,
+                folderUid: (if $folder == "General" then null else $folder end),
+                overwrite: true,
+                message: "Deployed via GitHub Actions from manifest"
+              }')
+            
+            # Deploy to Grafana
+            RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" \
+              -X POST \
+              -H "Authorization: Bearer $GRAFANA_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "$PAYLOAD" \
+              "$GRAFANA_URL/api/dashboards/db")
+            
+            HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+            BODY=$(echo "$RESPONSE" | sed '/HTTP_CODE:/d')
+            
+            if [ "$HTTP_CODE" -eq 200 ] || [ "$HTTP_CODE" -eq 201 ]; then
+              DASHBOARD_URL=$(echo "$BODY" | jq -r '.url // "unknown"')
+              echo "✓ Successfully deployed $DASHBOARD_PATH"
+              echo "  Dashboard URL: $GRAFANA_URL$DASHBOARD_URL"
+            else
+              echo "✗ Failed to deploy $DASHBOARD_PATH"
+              echo "  HTTP Status: $HTTP_CODE"
+              echo "  Response: $BODY"
+              EXIT_CODE=1
+            fi
+          done
+          
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo ""
+            echo "Deployment completed with errors"
+            exit 1
+          fi
+          
+          echo ""
+          echo "================================================"
+          echo "✓ All dashboards deployed successfully"
+          echo "================================================"
+
+      - name: PR Comment - Validation Success
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const manifest = JSON.parse(fs.readFileSync('${{ env.MANIFEST_FILE }}', 'utf8'));
+            
+            let comment = '## ✅ Dashboard Validation Passed\n\n';
+            comment += `**Dashboards ready to deploy** (${manifest.dashboards.length}):\n\n`;
+            
+            manifest.dashboards.forEach(dash => {
+              comment += `- \`${dash.uid}\` → \`${dash.path}\` (${dash.version || 'unversioned'}) → **${dash.folder}** folder\n`;
+            });
+            
+            comment += '\n**Next step:** Merge this PR to deploy these dashboards to production Grafana.\n';
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });

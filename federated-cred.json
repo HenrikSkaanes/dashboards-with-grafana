@@ -1,0 +1,7 @@
+{
+  "name": "github-main-branch",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:HenrikSkaanes/dashboards-with-grafana:ref:refs/heads/main",
+  "description": "GitHub Actions deployment from main branch",
+  "audiences": ["api://AzureADTokenExchange"]
+}

@@ -1,0 +1,112 @@
+# GitHub OIDC Authentication Setup Guide
+# For deploying Grafana dashboards from GitHub Actions to Azure Managed Grafana
+
+========================================
+OVERVIEW
+========================================
+
+This repository uses Azure OIDC (OpenID Connect) for secure authentication.
+NO passwords or secrets are stored - GitHub proves its identity cryptographically.
+
+========================================
+REQUIRED GITHUB SECRETS (4 Total)
+========================================
+
+These are PUBLIC identifiers only - not sensitive credentials:
+
+1. AZURE_CLIENT_ID
+   - Your Azure App Registration (Service Principal) ID
+   - Get: az ad app list --display-name "github-grafana-deploy" --query "[0].appId" -o tsv
+
+2. AZURE_TENANT_ID
+   - Your Azure AD tenant ID
+   - Get: az account show --query tenantId -o tsv
+
+3. AZURE_SUBSCRIPTION_ID
+   - Your Azure subscription ID
+   - Get: az account show --query id -o tsv
+
+4. GRAFANA_URL
+   - Your Azure Managed Grafana endpoint URL
+   - Get: az grafana show --name <grafana-name> --resource-group <rg> --query properties.endpoint -o tsv
+   - Format: https://<workspace-name>.grafana.azure.com
+
+========================================
+SETUP STEPS (ONE-TIME)
+========================================
+
+1. CREATE SERVICE PRINCIPAL
+   az ad app create --display-name "github-grafana-deploy"
+   APP_ID=$(az ad app list --display-name "github-grafana-deploy" --query "[0].appId" -o tsv)
+   az ad sp create --id $APP_ID
+
+2. CONFIGURE FEDERATED CREDENTIAL (OIDC Trust)
+   Create file: federated-cred.json
+   {
+     "name": "github-main-branch",
+     "issuer": "https://token.actions.githubusercontent.com",
+     "subject": "repo:<YOUR-ORG>/<YOUR-REPO>:ref:refs/heads/main",
+     "audiences": ["api://AzureADTokenExchange"]
+   }
+   
+   az ad app federated-credential create --id $APP_ID --parameters federated-cred.json
+
+3. GRANT GRAFANA ADMIN ROLE
+   GRAFANA_ID=$(az grafana show --name <grafana-name> --resource-group <rg> --query id -o tsv)
+   az role assignment create --assignee $APP_ID --role "Grafana Admin" --scope $GRAFANA_ID
+
+4. ADD SECRETS TO GITHUB
+   Go to: https://github.com/<YOUR-ORG>/<YOUR-REPO>/settings/secrets/actions
+   Click "New repository secret"
+   Add all 4 secrets listed above
+
+========================================
+HOW AUTHENTICATION WORKS
+========================================
+
+1. GitHub Actions starts workflow
+2. GitHub requests token from Azure AD (via OIDC)
+3. Azure AD verifies: "Is this really <YOUR-ORG>/<YOUR-REPO> main branch?"
+4. Azure AD issues temporary token (expires in 1 hour)
+5. Workflow uses token to get Grafana-scoped token
+6. Deploys dashboards to Grafana
+7. Token expires automatically
+
+NO static passwords involved! ✅
+
+========================================
+VERIFY SETUP
+========================================
+
+Check service principal has Grafana access:
+  az role assignment list \
+    --scope <grafana-resource-id> \
+    --assignee <app-id> \
+    --query "[].roleDefinitionName" -o table
+
+Expected output: "Grafana Admin"
+
+========================================
+TROUBLESHOOTING
+========================================
+
+❌ "Failed to get access token"
+   → Check federated credential subject matches: repo:<ORG>/<REPO>:ref:refs/heads/main
+   
+❌ "401 Unauthorized"
+   → Verify service principal has "Grafana Admin" role on Grafana resource
+   
+❌ "GRAFANA_URL not set"
+   → Ensure GitHub secret is configured with full HTTPS URL
+
+========================================
+SECURITY NOTES
+========================================
+
+✅ No passwords stored in GitHub
+✅ Tokens are temporary (1 hour)
+✅ Access controlled by Azure RBAC
+✅ Federated credential prevents token reuse outside GitHub Actions
+✅ All secrets are just IDs (not credentials)
+
+For more details, see: AZURE_SETUP.md

@@ -1,0 +1,48 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Grafana Dashboard Deployment Manifest",
+  "description": "Schema for active-manifest.json that controls which dashboard versions are deployed",
+  "type": "object",
+  "required": ["version", "dashboards"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Manifest schema version",
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "dashboards": {
+      "type": "array",
+      "description": "List of dashboards to deploy",
+      "items": {
+        "type": "object",
+        "required": ["uid", "path", "folder"],
+        "properties": {
+          "uid": {
+            "type": "string",
+            "description": "Unique identifier for the dashboard (must match dashboard JSON uid)",
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "path": {
+            "type": "string",
+            "description": "Relative path to dashboard JSON file from repo root",
+            "pattern": "^dashboards/.+\\.json$"
+          },
+          "folder": {
+            "type": "string",
+            "description": "Grafana folder name where dashboard will be deployed (use 'General' for root)",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "description": "Human-readable version label (optional, for documentation)",
+            "pattern": "^[a-zA-Z0-9._-]+$"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

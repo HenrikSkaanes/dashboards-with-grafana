@@ -1,0 +1,38 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "api-performance-dashboard",
+    "title": "API Performance Dashboard v2.0",
+    "tags": ["api", "performance", "v2.0"],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 0,
+    "refresh": "1m",
+    "panels": [
+      {
+        "id": 1,
+        "type": "timeseries",
+        "title": "Response Time P95",
+        "gridPos": {"h": 9, "w": 12, "x": 0, "y": 0},
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "type": "timeseries",
+        "title": "Throughput (req/s)",
+        "gridPos": {"h": 9, "w": 12, "x": 12, "y": 0},
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(rate(http_requests_total[5m]))"
+          }
+        ]
+      }
+    ]
+  }
+}
