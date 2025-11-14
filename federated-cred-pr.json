@@ -1,0 +1,7 @@
+{
+  "name": "github-pull-requests",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:HenrikSkaanes/dashboards-with-grafana:pull_request",
+  "description": "GitHub Actions for pull requests",
+  "audiences": ["api://AzureADTokenExchange"]
+}
