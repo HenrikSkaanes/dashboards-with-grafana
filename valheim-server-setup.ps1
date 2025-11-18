@@ -142,8 +142,8 @@ foreach ($steamCmdUrl in $steamCmdUrls) {
             $downloadSize = [math]::Round((Get-Item $steamCmdZip).Length / 1MB, 2)
             Write-Host "Download complete! Size: $downloadSize MB" -ForegroundColor Gray
             
-            # Validate size (SteamCMD should be at least 2MB)
-            if ($downloadSize -ge 2) {
+            # Validate size (SteamCMD zip is legitimately small, around 0.7-1 MB)
+            if ($downloadSize -ge 0.5) {
                 $downloadSuccess = $true
                 Write-Host "Download validated successfully!" -ForegroundColor Green
                 break
@@ -163,7 +163,7 @@ foreach ($steamCmdUrl in $steamCmdUrls) {
             if (Test-Path $steamCmdZip) {
                 $downloadSize = [math]::Round((Get-Item $steamCmdZip).Length / 1MB, 2)
                 
-                if ($downloadSize -ge 2) {
+                if ($downloadSize -ge 0.5) {
                     $downloadSuccess = $true
                     Write-Host "Download successful with alternative method! Size: $downloadSize MB" -ForegroundColor Green
                     break
