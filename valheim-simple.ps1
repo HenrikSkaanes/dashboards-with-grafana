@@ -30,8 +30,19 @@ Expand-Archive -Path "C:\Valheim\steamcmd.zip" -DestinationPath "C:\Valheim\stea
 Remove-Item "C:\Valheim\steamcmd.zip" -Force
 
 Write-Host "Installing Valheim Server (this takes 5-10 minutes)..." -ForegroundColor Yellow
+Write-Host "First run: Updating SteamCMD..." -ForegroundColor Gray
 Set-Location "C:\Valheim\steamcmd"
+& ".\steamcmd.exe" +login anonymous +quit
+
+Write-Host "Second run: Installing Valheim Dedicated Server..." -ForegroundColor Gray
 & ".\steamcmd.exe" +force_install_dir "C:\Valheim\server" +login anonymous +app_update 896660 validate +quit
+
+if (Test-Path "C:\Valheim\server\valheim_server.exe") {
+    Write-Host "Valheim server installed successfully!" -ForegroundColor Green
+} else {
+    Write-Host "WARNING: valheim_server.exe not found! Installation may have failed." -ForegroundColor Red
+    Write-Host "Try running manually: cd C:\Valheim\steamcmd; .\steamcmd.exe +force_install_dir C:\Valheim\server +login anonymous +app_update 896660 validate +quit" -ForegroundColor Yellow
+}
 
 Write-Host "Creating startup script..." -ForegroundColor Gray
 $startScript = @'
