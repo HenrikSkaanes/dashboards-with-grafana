@@ -1,0 +1,65 @@
+=============================================================================
+VALHEIM SERVER SETUP - INSTRUCTIONS
+=============================================================================
+
+OPTION 1: RECOMMENDED - One-liner (downloads and runs automatically)
+---------------------------------------------------------------------
+Copy and paste this single line into PowerShell Admin:
+
+irm https://raw.githubusercontent.com/HenrikSkaanes/dashboards-with-grafana/main/valheim-server-setup.ps1 | iex
+
+
+OPTION 2: Manual Download Method
+---------------------------------
+If the one-liner doesn't work, follow these steps:
+
+1. Download the script file (valheim-server-setup.ps1) to your VM
+
+2. In PowerShell Admin, navigate to where you saved it:
+   cd C:\Users\Administrator\Downloads
+
+3. Run the script:
+   PowerShell -ExecutionPolicy Bypass -File .\valheim-server-setup.ps1
+
+
+OPTION 3: Copy-Paste Method (if download blocked)
+--------------------------------------------------
+If you can't download files:
+
+1. Open Notepad on your VM
+
+2. Copy the entire contents of valheim-server-setup.ps1 into Notepad
+
+3. Save as: C:\valheim-setup.ps1
+   (Make sure to select "All Files" as file type, not "Text Documents")
+
+4. In PowerShell Admin, run:
+   PowerShell -ExecutionPolicy Bypass -File C:\valheim-setup.ps1
+
+
+WHAT THE SCRIPT DOES:
+---------------------
+✓ Removes all existing Valheim/SteamCMD installations
+✓ Downloads and installs SteamCMD fresh
+✓ Installs Valheim Dedicated Server (tries 3 times if needed)
+✓ Creates startup script with your server settings
+✓ Sets up auto-start on VM boot
+✓ Keeps the window open so you can see progress
+
+
+AFTER SCRIPT COMPLETES:
+-----------------------
+1. Configure Azure NSG firewall (UDP ports 2456, 2457, 2458)
+2. Edit server settings if needed: C:\Valheim\start-valheim-server.ps1
+3. Start server: PowerShell -ExecutionPolicy Bypass -File C:\Valheim\start-valheim-server.ps1
+4. Connect from Steam using: YOUR_VM_PUBLIC_IP:2456
+
+
+TROUBLESHOOTING:
+----------------
+- If window closes immediately, you're not running as Administrator
+- If script stops at "Get-PSDrive", use OPTION 2 or 3 instead of copy-paste
+- If SteamCMD fails 3 times, check internet and wait 30 min before retry
+- Check script progress - it will pause at errors and show what went wrong
+
+=============================================================================
