@@ -116,29 +116,80 @@ Write-Host "Directory structure created!" -ForegroundColor Green
 # ============================================================================
 Write-Host "`n[STEP 3/6] Downloading and installing SteamCMD..." -ForegroundColor Yellow
 
-$steamCmdUrl = "https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip"
 $steamCmdZip = "C:\Valheim\steamcmd.zip"
 $steamCmdPath = "C:\Valheim\steamcmd"
 
-# Download SteamCMD
-Write-Host "Downloading SteamCMD from $steamCmdUrl..." -ForegroundColor Gray
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+# Multiple URLs to try (in case one is down)
+$steamCmdUrls = @(
+    "https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip",
+    "https://media.steampowered.com/installer/steamcmd.zip"
+)
 
-try {
-    Invoke-WebRequest -Uri $steamCmdUrl -OutFile $steamCmdZip -UseBasicParsing -TimeoutSec 300
-} catch {
-    Pause-OnError "ERROR: Failed to download SteamCMD! Check internet connection. Error: $($_.Exception.Message)"
+# Set up proper TLS and user agent
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
+$downloadSuccess = $false
+
+foreach ($steamCmdUrl in $steamCmdUrls) {
+    Write-Host "Attempting download from: $steamCmdUrl" -ForegroundColor Gray
+    
+    try {
+        # Try with WebClient first (more reliable for large files)
+        $webClient = New-Object System.Net.WebClient
+        $webClient.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+        $webClient.DownloadFile($steamCmdUrl, $steamCmdZip)
+        
+        if (Test-Path $steamCmdZip) {
+            $downloadSize = [math]::Round((Get-Item $steamCmdZip).Length / 1MB, 2)
+            Write-Host "Download complete! Size: $downloadSize MB" -ForegroundColor Gray
+            
+            # Validate size (SteamCMD should be at least 2MB)
+            if ($downloadSize -ge 2) {
+                $downloadSuccess = $true
+                Write-Host "Download validated successfully!" -ForegroundColor Green
+                break
+            } else {
+                Write-Host "Downloaded file too small ($downloadSize MB). Trying next URL..." -ForegroundColor Yellow
+                Remove-Item $steamCmdZip -Force -ErrorAction SilentlyContinue
+            }
+        }
+    } catch {
+        Write-Host "Download failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "Trying alternative method..." -ForegroundColor Yellow
+        
+        # Fallback to Invoke-WebRequest
+        try {
+            Invoke-WebRequest -Uri $steamCmdUrl -OutFile $steamCmdZip -UseBasicParsing -TimeoutSec 300 -UserAgent "Mozilla/5.0"
+            
+            if (Test-Path $steamCmdZip) {
+                $downloadSize = [math]::Round((Get-Item $steamCmdZip).Length / 1MB, 2)
+                
+                if ($downloadSize -ge 2) {
+                    $downloadSuccess = $true
+                    Write-Host "Download successful with alternative method! Size: $downloadSize MB" -ForegroundColor Green
+                    break
+                } else {
+                    Remove-Item $steamCmdZip -Force -ErrorAction SilentlyContinue
+                }
+            }
+        } catch {
+            Write-Host "Alternative method also failed. Trying next URL..." -ForegroundColor Yellow
+        }
+    }
+}
+
+if (-not $downloadSuccess) {
+    Write-Host "`nAll download attempts failed!" -ForegroundColor Red
+    Write-Host "`nPossible solutions:" -ForegroundColor Yellow
+    Write-Host "1. Check VM internet connection: Test-NetConnection google.com" -ForegroundColor White
+    Write-Host "2. Try downloading manually from browser:" -ForegroundColor White
+    Write-Host "   https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip" -ForegroundColor White
+    Write-Host "3. Check if Windows Firewall is blocking downloads" -ForegroundColor White
+    Write-Host "4. Verify TLS/SSL certificates are up to date: certutil -generateSSTFromWU roots.sst" -ForegroundColor White
+    Pause-OnError "Failed to download SteamCMD after trying all methods."
 }
 
 if (!(Test-Path $steamCmdZip)) {
     Pause-OnError "ERROR: SteamCMD zip file not found after download!"
-}
-
-$downloadSize = [math]::Round((Get-Item $steamCmdZip).Length / 1MB, 2)
-Write-Host "Download complete! Size: $downloadSize MB" -ForegroundColor Gray
-
-if ($downloadSize -lt 1) {
-    Pause-OnError "ERROR: Downloaded file seems too small ($downloadSize MB). Download may have failed."
 }
 
 # Extract SteamCMD
